@@ -6,7 +6,7 @@ It looks at the rebar.config file to figure out what the dependencies are (suppo
 
 *Warning!!* This is serious work-in-progress! The code has been slapped together to be ready for a presentation and needs to be massaged a bit to be maintainable.
 
-= Installation
+# Installation
 
 Clone the repo.
 
@@ -14,7 +14,7 @@ make escript.
 
 Put the `columbo` script somewhere on your path.
 
-= Example of Usage
+# Example of Usage
 
 `$ git clone https://github.com/basho/riak_core` 
 
@@ -32,6 +32,6 @@ Put the `columbo` script somewhere on your path.
 
 Basically, if your image has more than one node in a box, then you have a dependency conflict that should be fixed.
 
-= To-Dos
+# To-Dos
 
 * Make it work with erlang.mk based projects.
