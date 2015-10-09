@@ -29,7 +29,8 @@ main(_Args) ->
     io:format("nodes: ~p~n", [digraph:vertices(Tree)]),
     io:format("1st level deps: ~p~n", [digraph:out_neighbours(Tree, TopLevelNode)]),
     resolve_tree(Tree, FirstLevelNodes),
-    print_tree(Tree).
+    print_tree(Tree),
+    write_dot_file(TopLevelNode, Tree).
 
 resolve_tree(_Tree, []) ->
     io:format("Done resolving tree~n");
@@ -251,6 +252,65 @@ author_from_url(Url) ->
     [_, Author] = string:tokens(Tmp, "/"),
     erlang:list_to_atom(Author).
 
+
+write_dot_file({App, Tag}=Root, Tree) ->
+    Filename = lists:flatten(io_lib:format("~p-~s.dot", [App, Tag])),
+    Header = header(Filename),
+    End    = "}",
+    NodeStrings = node_strings(Tree),
+    EdgeStrings = "", %edge_strings(Tree),
+    file:write_file(Filename,
+                    lists:flatten([Header,
+                                   NodeStrings,
+                                   EdgeStrings,
+                                   End])).
+
+header(Str) ->
+    io_lib:format("digraph ~p {~n", [Str]).
+
+node_strings(Tree) ->
+    Nodes = digraph:vertices(Tree),
+    Clusters = split_clusters(Nodes),
+    [ cluster_string(Cluster) 
+      || Cluster <- maps:to_list(Clusters) ].
+
+split_clusters(Nodes) ->
+    split_clusters(Nodes, #{}).
+
+split_clusters([], Clusters) ->
+    Clusters;
+split_clusters([Node|Nodes], Clusters) ->
+    split_clusters(Nodes, add_node_to_clusters(Node, Clusters)).
+
+add_node_to_clusters({Dep, Tag}, Clusters) ->
+    maps:put(Dep, [Tag], Clusters);
+add_node_to_clusters({Dep, Author, Treeish}=Node, Clusters) ->
+    case maps:find(Dep, Clusters) of
+        error ->
+            maps:put(Dep, [{Author, Treeish}], Clusters);
+        {ok, Nodes} ->
+            maps:put(Dep, [{Author, Treeish}|Nodes], Clusters)
+    end.
+
+cluster_string({Dep, Versions}) ->
+    Header = io_lib:format("subgraph cluster~p {~n", [Dep]),
+    Label  = lists:flatten(io_lib:format("label = \"~p\";~n ", [Dep])),
+    Nodes  = [ version_node_string(Version)
+               || Version <- Versions ],
+    End    = io_lib:format("}~n ", []),
+    lists:flatten([Header,
+                   Label,
+                   Nodes,
+                   End]).
+
+version_node_string({Author, {tag, Tag}}) ->
+    io_lib:format("\"{~p, {tag, ~s}}\";~n", [Author, Tag]);
+version_node_string({Author, {branch, Branch}}) ->
+    io_lib:format("\"{~p, {branch, ~s}}\";~n", [Author, Branch]);
+version_node_string({Author, "HEAD"}) ->
+    io_lib:format("\"{~p, {branch, ~s}}\";~n", [Author, "master"]);
+version_node_string(TopLevelTag) ->
+    io_lib:format("\"~s\";~n", [TopLevelTag]).
 
 %% utility functions
 
