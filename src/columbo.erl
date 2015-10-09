@@ -24,18 +24,19 @@ main(_Args) ->
     io:format("top level: ~p~n", [TopLevelNode]),
     Tree = initialise_tree(TopLevelNode, FirstLevelNodes),
     io:format("nodes: ~p~n", [digraph:vertices(Tree)]),
-    io:format("1st level deps: ~p~n", [digraph:out_neighbours(Tree, TopLevelNode)]).
+    io:format("1st level deps: ~p~n", [digraph:out_neighbours(Tree, TopLevelNode)]),
+    %resolve_tree(Tree, FirstLevelNodes),
+    print_tree(Tree).
 
-    %% {ok, Dirs} = file:list_dir("deps"),
-    %% Deps = [ erlang:list_to_atom(Dir) || Dir <- Dirs],
-    %% DepVersions = [ {Dep, current_version(Dep)}
-    %%                 || Dep <- Deps ],
-    %% io:format("~p~n", [DepVersions]),
-    %% DepDeps = [{Dep, dep_deps(Dep)} || Dep <- Deps],
-    %% io:format("~p~n", [DepDeps]).
+print_tree(Tree) ->
+    Vertices = digraph_utils:preorder(Tree),
+    lists:foreach(fun (Node) -> 
+                          print_node(Node, digraph:out_neighbours(Tree, Node))
+                  end,
+                  Vertices).
 
-    %% [tail_tags(Dep) || Dep <- Dirs].
-
+print_node(Node, Neighbours) ->
+    io:format("~p -> ~p~n", [Node, Neighbours]).
 
 clone_dep({{Dep, Author, _Treeish}, Url}) ->
     Cmd = io_lib:format("git clone ~p ~p/~p/~p",
@@ -110,15 +111,15 @@ determine_top_level_node() ->
     end.
         
 
-initialise_tree(Root, DepsSpecs) ->
+initialise_tree(Root, FirstLevelNodes) ->
     Tree = digraph:new(),
     digraph:add_vertex(Tree, Root),
-    lists:foreach(fun(DepSpec) -> add_dep_to_tree(Tree, Root, DepSpec) end,
-                  DepsSpecs),
+    lists:foreach(fun(Node) -> add_dep_to_tree(Tree, Root, Node) end,
+                  FirstLevelNodes),
     Tree.
 
-add_dep_to_tree(Tree, Parent, {Node, Uri}) ->
-    digraph:add_vertex(Tree,  Node, Uri),
+add_dep_to_tree(Tree, Parent, Node) ->
+    digraph:add_vertex(Tree, Node),
     digraph:add_edge(Tree, Parent, Node).
    
 tail_tags(Dep) ->
