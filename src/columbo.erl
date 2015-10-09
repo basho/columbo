@@ -9,8 +9,11 @@ columbo_dir() ->
 main(_Args) ->
     ok = ensure_columbo_dir(),
     DepsSpec1 = read_rebar_deps("rebar.config"),
-    DepsSpec2 = [ {{Dep, author_from_url(Url), Treeish}, Url}
-                || {Dep, {Url, Treeish}} <- DepsSpec1],
+%    DepsSpec2 = [ {{Dep, author_from_url(Url), Treeish}, Url}
+%                || {Dep, {Url, Treeish}} <- DepsSpec1],
+    DepsSpec2 = lists:map( fun dep_spec_to_node_and_url/1,
+                               DepsSpec1 ),
+    io:format("DepsSpec2: ~p~n", [DepsSpec2]),
     Authors = [ Author || {_,_,Author,_} <- DepsSpec2],
     ensure_author_dirs(Authors),
     info("Cloning direct dependencies."),
@@ -25,8 +28,34 @@ main(_Args) ->
     Tree = initialise_tree(TopLevelNode, FirstLevelNodes),
     io:format("nodes: ~p~n", [digraph:vertices(Tree)]),
     io:format("1st level deps: ~p~n", [digraph:out_neighbours(Tree, TopLevelNode)]),
-    %resolve_tree(Tree, FirstLevelNodes),
+    resolve_tree(Tree, FirstLevelNodes),
     print_tree(Tree).
+
+resolve_tree(_Tree, []) ->
+    io:format("Done resolving tree~n");
+resolve_tree(Tree, [Node|Nodes]) ->
+    ExtraNodes = resolve_node(Tree, Node),
+    resolve_tree(Tree, Nodes ++ ExtraNodes).
+
+resolve_node(Tree, Node) ->
+    checkout_dep(Node),
+    RebarDeps = read_node_deps(Node),
+    DepNodesWithUrl = [ dep_spec_to_node_and_url(Spec)
+                        || Spec <- RebarDeps ],
+    lists:foreach( fun clone_dep/1, DepNodesWithUrl),
+    DepNodes = lists:map( fun node_from_node_and_url/1, DepNodesWithUrl ),
+    lists:foreach( fun(DepNode) -> 
+                           add_dep_to_tree(Tree, Node, DepNode)
+                   end,
+                   DepNodes ),
+    DepNodes.
+
+
+
+dep_spec_to_node_and_url({Dep, {Url, Treeish}}) ->
+    {{Dep, author_from_url(Url), Treeish}, Url}.
+    
+node_from_node_and_url({Node, _Url}) -> Node.
 
 print_tree(Tree) ->
     Vertices = digraph_utils:preorder(Tree),
@@ -50,6 +79,10 @@ checkout_dep({Dep, Author, Treeish}) ->
     cd_dir(CurrentDir),
     ok.
 
+checkout_treeish("HEAD") ->
+    Cmd = "git checkout master",
+    info(Cmd),
+    execute_cmd(Cmd);
 checkout_treeish({tag, Tag}) ->
     Cmd = io_lib:format("git checkout ~s", [Tag]),
     info(Cmd),
@@ -157,8 +190,8 @@ cd_deps_dir(CurrentDir, Dep) ->
     cd_dir(Dir).
 
 cd_columbo_deps_dir(Author, Dep) ->
-    Dir = lists:flatten(io_lib:format("~s/~p/~p",
-                                      [columbo_dir(), Author, Dep])),
+    Dir = lists:flatten(io_lib:format("~s/~s/~p",
+                                      [columbo_dir(), erlang:atom_to_list(Author), Dep])),
     cd_dir(Dir).
 
 execute_cmd(Cmd) ->
@@ -189,6 +222,11 @@ read_rebar_deps(Filename) ->
         {error, enoent} ->
             []
     end.
+
+read_node_deps({Node, Author, _Treeish}) ->
+    Filename = io_lib:format(columbo_dir() ++ "/~p/~p/rebar.config", 
+                             [Author, Node]),
+    read_rebar_deps(Filename).
 
 pretty_deps(Deps) ->
     [ pretty_dep(Dep)
