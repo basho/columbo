@@ -6,6 +6,12 @@ It looks at the rebar.config file to figure out what the dependencies are (suppo
 
 *Warning!!* This is serious work-in-progress! The code has been slapped together to be ready for a presentation and needs to be massaged a bit to be maintainable.
 
+# Dependencies
+
+* graphviz
+* git
+* Erlang ;-)
+
 # Installation
 
 Clone the repo.
