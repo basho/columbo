@@ -51,7 +51,10 @@ resolve_node(Tree, Node) ->
                    DepNodes ),
     DepNodes.
 
-
+top_level_author() ->
+    Res = execute_cmd("git remote -v"),
+    Url = string:tokens(Res, " "),
+    author_from_url(Url).
 
 dep_spec_to_node_and_url({Dep, {Url, Treeish}}) ->
     {{Dep, author_from_url(Url), Treeish}, Url}.
@@ -145,8 +148,10 @@ determine_top_level_node() ->
     end.
         
 
-initialise_tree(Root, FirstLevelNodes) ->
+initialise_tree({Dep, Tag}, FirstLevelNodes) ->
     Tree = digraph:new(),
+    Author = top_level_author(),
+    Root = {Dep, Author, Tag}, 
     digraph:add_vertex(Tree, Root),
     lists:foreach(fun(Node) -> add_dep_to_tree(Tree, Root, Node) end,
                   FirstLevelNodes),
@@ -258,7 +263,7 @@ write_dot_file({App, Tag}=Root, Tree) ->
     Header = header(Filename),
     End    = "}",
     NodeStrings = node_strings(Tree),
-    EdgeStrings = "", %edge_strings(Tree),
+    EdgeStrings = edge_strings(Tree),
     file:write_file(Filename,
                     lists:flatten([Header,
                                    NodeStrings,
@@ -273,6 +278,21 @@ node_strings(Tree) ->
     Clusters = split_clusters(Nodes),
     [ cluster_string(Cluster) 
       || Cluster <- maps:to_list(Clusters) ].
+
+edge_strings(Tree) ->
+    Nodes = digraph:vertices(Tree),
+    lists:flatten([ out_edges_strings(Node, Tree) 
+                    || Node <- Nodes ]).
+
+out_edges_strings(Node, Tree) ->
+    Neighbours = digraph:out_neighbours(Tree, Node),
+    [ edge_string(Node, To)
+      || To <- Neighbours ].
+
+edge_string({FromDep, FromAuthor, FromVsn}, 
+            {ToDep, ToAuthor, ToVsn}) ->
+    io_lib:format("~s -> ~s;~n", [version_node_name(FromDep, {FromAuthor, FromVsn}),
+                                  version_node_name(ToDep, {ToAuthor, ToVsn})]).
 
 split_clusters(Nodes) ->
     split_clusters(Nodes, #{}).
@@ -295,7 +315,7 @@ add_node_to_clusters({Dep, Author, Treeish}=Node, Clusters) ->
 cluster_string({Dep, Versions}) ->
     Header = io_lib:format("subgraph cluster~p {~n", [Dep]),
     Label  = lists:flatten(io_lib:format("label = \"~p\";~n ", [Dep])),
-    Nodes  = [ version_node_string(Version)
+    Nodes  = [ version_node_string(Dep, Version)
                || Version <- Versions ],
     End    = io_lib:format("}~n ", []),
     lists:flatten([Header,
@@ -303,14 +323,26 @@ cluster_string({Dep, Versions}) ->
                    Nodes,
                    End]).
 
-version_node_string({Author, {tag, Tag}}) ->
-    io_lib:format("\"{~p, {tag, ~s}}\";~n", [Author, Tag]);
-version_node_string({Author, {branch, Branch}}) ->
-    io_lib:format("\"{~p, {branch, ~s}}\";~n", [Author, Branch]);
-version_node_string({Author, "HEAD"}) ->
-    io_lib:format("\"{~p, {branch, ~s}}\";~n", [Author, "master"]);
-version_node_string(TopLevelTag) ->
-    io_lib:format("\"~s\";~n", [TopLevelTag]).
+version_node_string(Dep, AuthorVsn) ->
+    Label = version_label(Dep, AuthorVsn),
+    NodeName = version_node_name(Dep, AuthorVsn),
+    io_lib:format("~s [label=\"~s\"];~n", [NodeName, Label]).  
+
+
+
+version_label(Dep, {Author, {tag, Tag}}) ->
+    io_lib:format("{~p, {tag, ~s}}", [Author, Tag]);
+version_label(Dep, {Author, {branch, Branch}}) ->
+    io_lib:format("{~p, {branch, ~s}}", [Author, Branch]);
+version_label(Dep, {Author, "HEAD"}) ->
+    io_lib:format("{~p, {branch, ~s}}", [Author, "master"]);
+version_label(Dep, {TopLevelAuthor, TopLevelTag}) ->
+    io_lib:format("{~p, ~s}", [TopLevelAuthor, TopLevelTag]).
+
+version_node_name(Dep, AuthorVsn) ->
+    Label = version_label(Dep, AuthorVsn),
+    io_lib:format("\"~p-~s\"", [Dep, Label]).  
+    
 
 %% utility functions
 
