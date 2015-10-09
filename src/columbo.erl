@@ -153,7 +153,15 @@ initialise_tree(Root, FirstLevelNodes) ->
 
 add_dep_to_tree(Tree, Parent, Node) ->
     digraph:add_vertex(Tree, Node),
-    digraph:add_edge(Tree, Parent, Node).
+    case does_edge_exist(Tree, Parent, Node) of
+        true ->
+            ok;
+        false ->
+            digraph:add_edge(Tree, Parent, Node)
+    end.
+
+does_edge_exist(Tree, From, To) ->
+    lists:member(To, digraph:out_neighbours(Tree, From)).
    
 tail_tags(Dep) ->
     Cmd = "git tag -l \"[0-9]*\" -l \"v[0-9]*\"",
