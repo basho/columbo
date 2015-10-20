@@ -83,6 +83,8 @@ checkout_dep({Dep, Author, Treeish}) ->
     cd_dir(CurrentDir),
     ok.
 
+checkout_treeish(undefined) ->
+    checkout_treeish("HEAD");
 checkout_treeish("HEAD") ->
     Cmd = "git checkout master",
     info(Cmd),
@@ -93,6 +95,9 @@ checkout_treeish({tag, Tag}) ->
     execute_cmd(Cmd);
 checkout_treeish({branch, Branch}) ->
     Cmd = io_lib:format("git checkout ~s", [Branch]),
+    execute_cmd(Cmd);
+checkout_treeish(CommitHash) ->
+    Cmd = io_lib:format("git checkout ~s", [CommitHash]),
     execute_cmd(Cmd).
 
 info(Str) ->
@@ -136,7 +141,9 @@ current_tag_and_branch() ->
 determine_top_level_node() ->
     case find_app_src(".") of
         error ->
-            no_app_src;
+            % application with only deps, ie riak
+            {Tag, _Branch} = current_tag_and_branch(),
+            {current_dir_as_app_name(), Tag};
         AppSrc ->
             case file:consult("src/" ++ AppSrc) of
                 {ok, [{application, App, _}]} ->
@@ -215,6 +222,9 @@ current_dir() ->
     {ok, Dir} = file:get_cwd(),
     Dir.
 
+current_dir_as_app_name() ->
+    list_to_atom(hd(lists:reverse(string:tokens(current_dir(), "/")))).
+
 trim_version_string(S) ->
     string:strip(S, both, hd("\n")).
 
@@ -249,16 +259,28 @@ pretty_deps(Deps) ->
 pretty_dep({Dep, _Req, Git}) ->
     {Dep, extract_git_info(Git)}.
 
+extract_git_info({git, Url}) ->
+    extract_git_info({git, Url, undefined});
 extract_git_info({git, Url, Info}) ->
     {Url, Info}.
 
 author_from_url(Url) ->
-    {match, [Tmp]} =  re:run(Url, "github.\com.([^/]*)", [{capture, first, list}]),
-    [_, Author] = string:tokens(Tmp, "/"),
-    erlang:list_to_atom(Author).
+    % NOTE: support for the following Url formats:
+    % * http[s]://github.com/author/repo
+    % * git@github.com:author/repo
+    %
+    % As well as some uninformed, but acceptible formats:
+    % * git@github.com:/author/repo
+    case re:run(Url,
+            "(git@|git://|http[s]?://)([^:/]+\.[^:/]+)[:/]+(.*)[/]",
+            [{capture, all, list}]) of
+        {match, [_All, _Proto, _Host, Author]} -> 
+            erlang:list_to_atom(Author);
+        _ ->
+            error({invalid_git_url, Url})
+    end.
 
-
-write_dot_file({App, Tag}=Root, Tree) ->
+write_dot_file({App, Tag}=_Root, Tree) ->
     Filename = lists:flatten(io_lib:format("~p-~s.dot", [App, Tag])),
     Header = header(Filename),
     End    = "}",
@@ -351,7 +373,10 @@ postfix(Pattern, String) ->
     lists:prefix(lists:reverse(Pattern), lists:reverse(String)).
 
 find_app_src(Dir) ->
-    {ok, Filenames} = file:list_dir(Dir ++ "/src"),
+    Filenames = case file:list_dir(Dir ++ "/src") of
+        {ok, Filenames0} -> Filenames0;
+        _ -> []
+    end,
     case [ File || File <- Filenames, postfix(".app.src", File) ] of
         [AppSrc] -> AppSrc;
         _ -> error
